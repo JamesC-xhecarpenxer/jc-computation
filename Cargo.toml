@@ -1,0 +1,29 @@
+[package]
+name = "jc-computation"
+version = "0.1.0"
+edition = "2021"
+authors = ["James Chapman <xhecarpenxer@gmail.com>"]
+description = "JC-Computation: A distributed quotient-rewriting engine over causal history space"
+license-file = "LICENSE"
+repository = "https://github.com/jchapman/jc-computation"
+keywords = ["distributed", "causal", "dag", "crdt", "formal-methods"]
+categories = ["algorithms", "data-structures", "concurrency"]
+
+[lib]
+name = "jc_computation"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jc-demo"
+path = "src/main.rs"
+
+[dependencies]
+sha2 = "0.10"
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+indexmap = "=2.2.6"
+
+[profile.release]
+opt-level = 3
+lto = true
