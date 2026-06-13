@@ -1,5 +1,11 @@
 # JC-Computation
 
+Computation as a commons: open participation, universal verification, and deterministic outcomes.
+
+The machine does not care who you are. It only cares whether the proof is valid.
+
+Math is the governor. History is the source of truth. Computation is the constitution.
+
 A distributed quotient-rewriting engine over causal history space, implemented in Rust.
 
 ## Core Equation
