@@ -169,3 +169,8 @@ See `FORMAL_THEORY.md.pdf` for the complete mathematical treatment, including:
 
 ## License
 
+
+
+## v3.3 Patch
+- Cache-aware identity recomputation using payload and parent-set hashes.
+- recompute_id short-circuits when structural inputs are unchanged.

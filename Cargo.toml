@@ -17,6 +17,11 @@ path = "src/lib.rs"
 name = "jc-demo"
 path = "src/main.rs"
 
+[[bench]]
+name = "bench_nf"
+path = "benches/bench_nf.rs"
+harness = false
+
 [dependencies]
 sha2 = "0.10"
 hex = "0.4"

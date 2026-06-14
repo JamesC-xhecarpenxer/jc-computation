@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>JC-Computation — Browser Demo</title>
+  <style>
+    body { font-family: monospace; padding: 2em; background: #0d1117; color: #e6edf3; }
+    h1 { color: #58a6ff; }
+    h2 { color: #79c0ff; margin-top: 2em; }
+    pre { background: #161b22; padding: 1em; border-radius: 6px; overflow-x: auto; }
+    .ok  { color: #3fb950; }
+    .err { color: #f85149; }
+    button { background: #238636; color: white; border: none; padding: .5em 1.2em;
+             border-radius: 6px; cursor: pointer; font-size: 1em; margin: .5em; }
+    button:hover { background: #2ea043; }
+    #output { min-height: 4em; }
+  </style>
+</head>
+<body>
+  <h1>JC-Computation — Browser Demo</h1>
+  <p>Pure JS, zero dependencies. State = σ(nf(History)).</p>
+
+  <button onclick="runDemo('kv')">Key-Value Demo</button>
+  <button onclick="runDemo('counter')">Counter Demo</button>
+  <button onclick="runDemo('distributed')">Distributed Sync Demo</button>
+  <button onclick="runDemo('all')">Run All Tests</button>
+
+  <h2>Output</h2>
+  <pre id="output">(click a button above)</pre>
+
+  <!--
+    Load the standalone bundle — no module bundler needed.
+    Attaches to window.JcComputation.
+  -->
+  <script src="../jc-computation.standalone.js"></script>
+  <script>
+    const {
+      Event, JcKernel,
+      KvFunctor, LogFunctor, CounterFunctor,
+      DistributedNode, mergeHistories,
+    } = window.JcComputation;
+
+    const out = document.getElementById('output');
+
+    function log(msg, cls = '') {
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = msg + '\n';
+      out.appendChild(span);
+    }
+
+    function runDemo(which) {
+      out.textContent = '';
+
+      if (which === 'kv' || which === 'all') {
+        log('── Key-Value Demo ──────────────────────────────────────────');
+        const k = new JcKernel();
+        k.append(k.newEvent('set', { key: 'user',  val: 'Alice' }));
+        k.append(k.newEvent('set', { key: 'role',  val: 'admin' }));
+        k.append(k.newEvent('set', { key: 'user',  val: 'Bob' }));  // overwrites
+        const state = k.state(KvFunctor);
+        log(`  user = ${state.get('user')}  (expected: Bob)`);
+        log(`  role = ${state.get('role')}  (expected: admin)`);
+        log(`  history size: ${k.historySize} events`);
+        log('  ✓ KV store works\n', 'ok');
+      }
+
+      if (which === 'counter' || which === 'all') {
+        log('── Counter Demo ────────────────────────────────────────────');
+        const k = new JcKernel();
+        for (const d of [10, 20, -5, 30]) k.append(k.newEvent('increment', d));
+        const total = k.state(CounterFunctor);
+        log(`  total = ${total}  (expected: 55)`);
+        log(total === 55 ? '  ✓ Counter correct\n' : '  ✗ Counter WRONG\n', total === 55 ? 'ok' : 'err');
+      }
+
+      if (which === 'distributed' || which === 'all') {
+        log('── Distributed Sync Demo ───────────────────────────────────');
+        const nodeA = new DistributedNode('Node-A');
+        const nodeB = new DistributedNode('Node-B');
+
+        // Both nodes work independently (partition)
+        nodeA.append(nodeA.newEvent('increment', 100));
+        nodeA.append(nodeA.newEvent('increment', 50));
+        nodeB.append(nodeB.newEvent('increment', 25));
+        nodeB.append(nodeB.newEvent('increment', 75));
+
+        log(`  A before sync: ${nodeA.state(CounterFunctor)}`);
+        log(`  B before sync: ${nodeB.state(CounterFunctor)}`);
+
+        // Heal partition — merge is the only primitive
+        nodeA.syncWith(nodeB);
+        nodeB.syncWith(nodeA);
+
+        const ca = nodeA.state(CounterFunctor);
+        const cb = nodeB.state(CounterFunctor);
+        log(`  A after sync:  ${ca}`);
+        log(`  B after sync:  ${cb}`);
+        log(`  Converged: ${ca === cb} (expected: true)`);
+        log(`  Total = ${ca} (expected: 250)`);
+        log(ca === 250 && ca === cb ? '  ✓ Distributed sync correct\n' : '  ✗ FAILED\n',
+            ca === 250 ? 'ok' : 'err');
+      }
+    }
+  </script>
+</body>
+</html>
