@@ -32,9 +32,9 @@
 use crate::dag::CausalDag;
 use crate::event::{Event, EventId};
 use crate::kernel::{JcKernel, SemanticFunctor};
-use crate::nf::{NfConfig, NfStats};
+use crate::nf::{NfConfig, NfResult};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 // ────────────────────────────────────────────────────────────────────────────
 // EventStore trait
@@ -252,7 +252,7 @@ impl<S: EventStore> IncrementalKernel<S> {
     }
 
     /// Append an event, persist it to the store, and reduce.
-    pub fn append(&mut self, event: Event) -> Result<NfStats, S::Error> {
+    pub fn append(&mut self, event: Event) -> Result<NfResult, S::Error> {
         // Persist first (WAL before apply — crash-safe).
         self.store.append(&event)?;
         self.event_count += 1;

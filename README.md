@@ -38,13 +38,15 @@ This satisfies the CRDT laws (commutativity, associativity, idempotency) **deriv
 
 ```
 src/
-├── event.rs   — Immutable, content-addressed events (SHA-256 Merkle nodes)
-├── dag.rs     — Causal DAG: topological order, ancestry, frontier, closure
-├── cone.rs    — Cone hashing engine (Merkle-tree hash over causal history)
-├── nf.rs      — Normal Form reduction engine (phases A → D)
-├── kernel.rs  — JcKernel runtime + built-in semantic functors
-├── merge.rs   — Distributed merge protocol + DistributedNode simulation
-└── lib.rs     — Public API surface
+├── event.rs        — Immutable, content-addressed events (SHA-256 Merkle nodes)
+├── dag.rs          — Causal DAG: topological order, ancestry, frontier, closure
+├── cone.rs         — Cone hashing engine (Merkle-tree hash over causal history)
+├── nf.rs           — Normal Form reduction engine (phases A → D)
+├── kernel.rs       — JcKernel runtime + built-in semantic functors
+├── merge.rs        — Distributed merge protocol + DistributedNode simulation
+├── network.rs      — Peer-to-peer sync protocol
+├── persistence.rs  — History serialization and storage
+└── lib.rs          — Public API surface
 ```
 
 ### Normal Form Reduction Phases
@@ -89,11 +91,11 @@ assert_eq!(state["role"], "admin");
 
 ### Built-in Semantic Functors
 
-| Functor         | Event kind    | State type                        |
-|-----------------|---------------|-----------------------------------|
-| `KvFunctor`     | `"set"`       | `HashMap<String, Value>`          |
-| `CounterFunctor`| `"increment"` | `i64`                             |
-| `LogFunctor`    | `"log"`       | `Vec<Value>` (causal order)       |
+| Functor          | Event kind    | State type                   |
+|------------------|---------------|------------------------------|
+| `KvFunctor`      | `"set"`       | `HashMap<String, Value>`     |
+| `CounterFunctor` | `"increment"` | `i64`                        |
+| `LogFunctor`     | `"log"`       | `Vec<Value>` (causal order)  |
 
 Implement `SemanticFunctor` for your own domain model.
 
@@ -130,13 +132,32 @@ cargo run
 
 The demo exercises all four built-in scenarios: KV store, distributed counter, causal event log, and distributed convergence after a simulated network partition.
 
+## Running Benchmarks
+
+```bash
+# Quick smoke-test (10K / 100K / 1M events, ~30 s)
+BENCH_QUICK=1 cargo bench --bench bench_nf
+
+# Full run (1M / 10M / 100M events — several minutes)
+cargo bench --bench bench_nf
+```
+
+The benchmark exercises three DAG topologies (linear chain, wide fan-out, noop-heavy) at each scale and prints a scaling analysis with implied `O(n^x)` exponents and a pass/fail verdict.
+
 ## Running Tests
 
 ```bash
+# Unit tests (all modules)
 cargo test --lib
+
+# Property-based tests (23 proptest cases)
+cargo test --test property_tests
+
+# All tests
+cargo test
 ```
 
-21 tests across all modules. All tests pass with zero warnings.
+**24 tests total — 23 property/integration + 1 doc-test. All pass with zero warnings.**
 
 ## Formal Theory
 
@@ -158,7 +179,8 @@ See `FORMAL_THEORY.md.pdf` for the complete mathematical treatment, including:
 
 ## Roadmap
 
-- [ ] Property tests for merge commutativity/idempotency (`proptest`)
+- [x] Property tests for merge commutativity/idempotency (`proptest`)
+- [x] Benchmarks (`criterion`-style) for cone hashing and NF reduction at scale
 - [ ] Fuzzing targets for DAG operations
 - [ ] CI pipeline: `cargo fmt`, `cargo clippy`, `cargo test`
 - [ ] docs.rs metadata (`[package.metadata.docs.rs]`)
@@ -169,8 +191,27 @@ See `FORMAL_THEORY.md.pdf` for the complete mathematical treatment, including:
 
 ## License
 
+See `LICENSE`.
 
+---
 
-## v3.3 Patch
+## Changelog
+
+### v0.1.0
+- Initial release: causal DAG, NF reduction, semantic functors, distributed merge.
+
+### v0.1.1
 - Cache-aware identity recomputation using payload and parent-set hashes.
-- recompute_id short-circuits when structural inputs are unchanged.
+- `recompute_id` short-circuits when structural inputs are unchanged.
+
+### v0.1.3
+- Fixed `benches/bench_nf.rs`: all five `NfResult` field accesses (`events_after`, `iterations`, `cones_merged`, `chains_contracted`, `noops_eliminated`) corrected to go through the `.stats` sub-field.
+- Fixed bench run instructions in the file header: `cargo bench --bench bench_nf` (and `BENCH_QUICK=1` variant) instead of the incorrect manual binary path.
+- Benchmark verified end-to-end in quick mode (10K/100K/1M events, all three topologies).
+- Fixed `phase_c1_merge_cones` and `phase_c2_collapse_chains` to return reidentification pairs `Vec<(EventId, EventId)>` alongside mutation counts and dirty sets, aligning function signatures with their call sites.
+- Fixed `CachedKvFunctor` dereference of `usize` cache key (was `*s`, now `s`).
+- Removed unused `NfStats` import from `persistence.rs`.
+- Fixed 15 unit test assertions accessing `NfResult` stats fields via the correct path (`result.stats.field` rather than `result.field`).
+- Fixed property test `prop_noop_injection_transparent` overflow: constrained generated `i64` values to `[-1_000_000, 1_000_000]` to prevent integer overflow in `CounterFunctor` sum.
+- Removed unused imports `NfConfig` and `LogFunctor` from `property_tests.rs`.
+- Applied 6 Clippy fixes: `div_ceil`, two overindented doc comments, two collapsible `if` blocks, and a `single_match` in `network.rs`.

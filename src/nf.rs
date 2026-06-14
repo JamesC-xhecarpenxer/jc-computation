@@ -62,6 +62,43 @@ use crate::dag::CausalDag;
 use crate::event::{Event, EventId};
 use std::collections::HashSet;
 
+/// Structural diff emitted by a single `reduce()` call.
+///
+/// Represents the net change between `nf(H)` (before) and `nf(H ∪ {e})` (after).
+///
+/// - `inserted`     — event IDs present in the new normal form but not the old.
+/// - `removed`      — event IDs present in the old normal form but not the new.
+/// - `reidentified` — pairs `(old_id, new_id)` where an event's parent set was
+///   rewritten by C1/C2, changing its content-addressed ID.
+///   The semantic payload is identical; only the address changed.
+///
+/// Invariant: `inserted ∩ removed = ∅`,  `reidentified` pairs are disjoint from both.
+#[derive(Default, Clone, Debug)]
+pub struct NfDelta {
+    pub inserted: Vec<EventId>,
+    pub removed: Vec<EventId>,
+    /// (old_id, new_id): same payload, parent-rewritten by C1 or C2.
+    pub reidentified: Vec<(EventId, EventId)>,
+}
+
+impl NfDelta {
+    /// True iff the delta contains no structural changes (pure no-op run).
+    pub fn is_empty(&self) -> bool {
+        self.inserted.is_empty() && self.removed.is_empty() && self.reidentified.is_empty()
+    }
+
+    /// Whether any reduction phase made structural changes (beyond a simple insert).
+    pub fn has_reductions(&self) -> bool {
+        !self.removed.is_empty() || !self.reidentified.is_empty()
+    }
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct NfResult {
+    pub stats: NfStats,
+    pub delta: NfDelta,
+}
+
 /// Configuration for the NF reduction engine.
 pub struct NfConfig {
     /// Maximum number of reduction iterations (safety bound).
@@ -88,13 +125,16 @@ impl Default for NfConfig {
             assume_content_addressed: true,
             enable_chain_contract: true,
             enable_noop_elim: true,
-            enable_closure_check: true,
+            // Disabled by default: the O(N) scan is unnecessary for locally-built
+            // DAGs, which are always causally closed by construction.  Enable on
+            // cross-peer sync paths (e.g. merge_histories_with_config).
+            enable_closure_check: false,
         }
     }
 }
 
 /// Statistics from an NF run.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct NfStats {
     pub iterations: usize,
     pub cones_merged: usize,
@@ -119,12 +159,29 @@ impl NormalForm {
     }
 
     /// Compute nf(H). Mutates `dag` in place.
-    /// Returns statistics about the reduction.
-    pub fn reduce(&mut self, dag: &mut CausalDag) -> NfStats {
+    /// Returns an [`NfResult`] containing reduction statistics and the structural
+    /// [`NfDelta`] — the net diff between the old and new normal form.
+    ///
+    /// The delta is computed as:
+    /// - `inserted` = IDs in `nf(H ∪ {e})` not in `nf(H)` (snapshot before reduce)
+    /// - `removed`  = IDs in `nf(H)` not in `nf(H ∪ {e})`
+    /// - `reidentified` = (old_id, new_id) pairs from C1/C2 parent rewrites
+    ///
+    /// Note: `reidentified` entries appear in `inserted` (new_id) and `removed`
+    /// (old_id) as well, letting consumers that only care about net presence use
+    /// inserted/removed, while consumers that track ID identity can use reidentified.
+    pub fn reduce(&mut self, dag: &mut CausalDag) -> NfResult {
+        // Snapshot the ID set before any reduction so we can compute the net diff.
+        let ids_before: std::collections::HashSet<EventId> =
+            dag.events.keys().cloned().collect();
+
         let mut stats = NfStats {
             events_before: dag.len(),
             ..Default::default()
         };
+
+        // Accumulate (old_id → new_id) rewrites emitted by C1 and C2.
+        let mut reidentified: Vec<(EventId, EventId)> = Vec::new();
 
         // Fast-path: if C1 is enabled, check whether the DAG contains any
         // noops (the only source of isomorphic cones in a content-addressed
@@ -188,10 +245,9 @@ impl NormalForm {
 
             // If C3 just eliminated noops and none remain, clear has_noops so
             // C1's lazy compute_all is never triggered.
-            if c3_eliminated > 0 && has_noops {
-                if !dag.events.values().any(|e| e.payload.is_noop()) {
-                    has_noops = false;
-                }
+            if c3_eliminated > 0 && has_noops
+                && !dag.events.values().any(|e| e.payload.is_noop()) {
+                has_noops = false;
             }
 
             // Phase C1: Merge isomorphic cones.
@@ -211,9 +267,10 @@ impl NormalForm {
                     cone_cache_ready = true;
                 }
 
-                let (merged, dirty) = self.phase_c1_merge_cones(dag);
+                let (merged, dirty, reids) = self.phase_c1_merge_cones(dag);
 
                 stats.cones_merged += merged;
+                reidentified.extend(reids);
 
                 if !dirty.is_empty() {
                     self.cone_hasher.invalidate(&dirty, dag);
@@ -227,8 +284,9 @@ impl NormalForm {
 
             // Phase C2: Collapse linear chains.
             let c2_contracted = if self.config.enable_chain_contract {
-                let (contracted, dirty) = self.phase_c2_collapse_chains(dag);
+                let (contracted, dirty, reids) = self.phase_c2_collapse_chains(dag);
                 stats.chains_contracted += contracted;
+                reidentified.extend(reids);
                 if !dirty.is_empty() && cone_cache_ready {
                     self.cone_hasher.invalidate(&dirty, dag);
                     self.cone_hasher.compute_dirty(dag);
@@ -269,7 +327,22 @@ impl NormalForm {
         }
 
         stats.events_after = dag.len();
-        stats
+
+        // Compute net diff from the pre-reduction snapshot.
+        let ids_after: std::collections::HashSet<EventId> =
+            dag.events.keys().cloned().collect();
+
+        let inserted: Vec<EventId> = ids_after.difference(&ids_before).cloned().collect();
+        let removed: Vec<EventId> = ids_before.difference(&ids_after).cloned().collect();
+
+        NfResult {
+            stats,
+            delta: NfDelta {
+                inserted,
+                removed,
+                reidentified,
+            },
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -301,10 +374,11 @@ impl NormalForm {
     // Phase C1 — Isomorphic Cone Merging
     // -------------------------------------------------------------------------
 
-    fn phase_c1_merge_cones(&mut self, dag: &mut CausalDag) -> (usize, HashSet<EventId>) {
+    fn phase_c1_merge_cones(&mut self, dag: &mut CausalDag) -> (usize, HashSet<EventId>, Vec<(EventId, EventId)>) {
         let groups = self.cone_hasher.isomorphic_groups();
         let mut merged = 0;
         let mut dirty: HashSet<EventId> = HashSet::new();
+        let mut reids: Vec<(EventId, EventId)> = Vec::new();
 
         for group in groups {
             if group.len() < 2 {
@@ -328,7 +402,12 @@ impl NormalForm {
                     if let Some(child) = dag.events.get_mut(&child_id) {
                         if child.parents.remove(dup_id) {
                             child.parents.insert(canonical.clone());
+                            let old_id = child_id.clone();
                             child.recompute_id();
+                            let new_id = child.id.clone();
+                            if new_id != old_id {
+                                reids.push((old_id, new_id));
+                            }
                             dirty.insert(child_id.clone());
                         }
                     }
@@ -346,16 +425,17 @@ impl NormalForm {
             }
         }
 
-        (merged, dirty)
+        (merged, dirty, reids)
     }
 
     // -------------------------------------------------------------------------
     // Phase C2 — Linear Chain Contraction
     // -------------------------------------------------------------------------
 
-    fn phase_c2_collapse_chains(&self, dag: &mut CausalDag) -> (usize, HashSet<EventId>) {
+    fn phase_c2_collapse_chains(&self, dag: &mut CausalDag) -> (usize, HashSet<EventId>, Vec<(EventId, EventId)>) {
         let mut contracted = 0;
         let mut dirty: HashSet<EventId> = HashSet::new();
+        let reids: Vec<(EventId, EventId)> = Vec::new();
 
         let candidates: Vec<EventId> = dag
             .events
@@ -381,19 +461,18 @@ impl NormalForm {
             if let Some(event) = dag.events.get(&id) {
                 let parents = event.parents.clone();
                 let children_opt = dag.children.get(&id).cloned();
-                if parents.len() == 1 && children_opt.as_ref().map(|c| c.len()) == Some(1) {
-                    if self.is_passthrough(event) {
-                        if let Some(kids) = dag.children.get(&id) {
-                            dirty.extend(kids.iter().cloned());
-                        }
-                        dag.remove(&id);
-                        contracted += 1;
+                if parents.len() == 1 && children_opt.as_ref().map(|c| c.len()) == Some(1)
+                    && self.is_passthrough(event) {
+                    if let Some(kids) = dag.children.get(&id) {
+                        dirty.extend(kids.iter().cloned());
                     }
+                    dag.remove(&id);
+                    contracted += 1;
                 }
             }
         }
 
-        (contracted, dirty)
+        (contracted, dirty, reids)
     }
 
     /// A "passthrough" event is a structural relay with no semantic payload effect
@@ -488,7 +567,7 @@ mod tests {
         let stats = nf.reduce(&mut dag);
 
         assert!(dag.len() < size_before, "noop should be eliminated");
-        assert!(stats.noops_eliminated > 0);
+        assert!(stats.stats.noops_eliminated > 0);
     }
 
     #[test]
@@ -537,7 +616,7 @@ mod tests {
         let stats = nf.reduce(&mut dag);
 
         assert_eq!(dag.len(), 2, "genesis + data only");
-        assert_eq!(stats.noops_eliminated, 1);
+        assert_eq!(stats.stats.noops_eliminated, 1);
         let survivor = dag.events.values().find(|e| e.payload == data_payload).unwrap();
         assert!(
             survivor.parents.contains(&gid),
@@ -563,7 +642,7 @@ mod tests {
         let stats = nf.reduce(&mut dag);
 
         assert_eq!(dag.len(), 2, "genesis + data only");
-        assert_eq!(stats.noops_eliminated, 10);
+        assert_eq!(stats.stats.noops_eliminated, 10);
         assert!(dag.is_causally_closed());
     }
 
@@ -586,7 +665,7 @@ mod tests {
         let mut nf = NormalForm::default();
         let stats = nf.reduce(&mut dag);
 
-        assert!(stats.noops_eliminated >= 1, "at least one noop eliminated");
+        assert!(stats.stats.noops_eliminated >= 1, "at least one noop eliminated");
         assert!(dag.is_causally_closed());
     }
 
@@ -608,7 +687,7 @@ mod tests {
         let mut nf = NormalForm::default();
         let stats = nf.reduce(&mut dag);
 
-        assert_eq!(stats.noops_eliminated, 2);
+        assert_eq!(stats.stats.noops_eliminated, 2);
         assert_eq!(dag.len(), 4, "genesis + a + b + c");
         assert!(dag.is_causally_closed());
 
@@ -736,7 +815,7 @@ mod tests {
         nf.config.assume_content_addressed = false;
         let stats = nf.reduce(&mut dag);
 
-        assert!(stats.cones_merged >= 1);
+        assert!(stats.stats.cones_merged >= 1);
         assert_eq!(dag.len(), size_before - 1);
         assert!(dag.is_causally_closed());
     }
@@ -760,7 +839,7 @@ mod tests {
         let stats = nf.reduce(&mut dag);
         let elapsed = t0.elapsed();
 
-        assert_eq!(stats.noops_eliminated, N);
+        assert_eq!(stats.stats.noops_eliminated, N);
         assert_eq!(dag.len(), 2, "genesis + sentinel");
         assert!(dag.is_causally_closed());
         assert!(
@@ -787,8 +866,8 @@ mod tests {
         let mut nf = NormalForm::default();
         let stats = nf.reduce(&mut dag);
 
-        assert_eq!(stats.noops_eliminated, 100);
-        assert_eq!(stats.iterations, 1, "noop-chain must converge in 1 iteration");
+        assert_eq!(stats.stats.noops_eliminated, 100);
+        assert_eq!(stats.stats.iterations, 1, "noop-chain must converge in 1 iteration");
     }
 
     #[test]
@@ -806,8 +885,8 @@ mod tests {
         let mut nf = NormalForm::default();
         let stats = nf.reduce(&mut dag);
 
-        assert_eq!(stats.cones_merged, 0, "no cone merges in data-only DAG");
-        assert_eq!(stats.iterations, 1, "data-only DAG converges in 1 iteration");
+        assert_eq!(stats.stats.cones_merged, 0, "no cone merges in data-only DAG");
+        assert_eq!(stats.stats.iterations, 1, "data-only DAG converges in 1 iteration");
     }
 
     #[test]
@@ -842,8 +921,8 @@ mod tests {
         let stats = nf.reduce(&mut dag);
 
         assert_eq!(dag.len(), size_before);
-        assert_eq!(stats.noops_eliminated, 0);
-        assert_eq!(stats.cones_merged, 0);
+        assert_eq!(stats.stats.noops_eliminated, 0);
+        assert_eq!(stats.stats.cones_merged, 0);
     }
 
     #[test]
@@ -852,7 +931,7 @@ mod tests {
         let mut nf = NormalForm::default();
         let stats = nf.reduce(&mut dag);
         assert_eq!(dag.len(), 1);
-        assert_eq!(stats.noops_eliminated, 0);
-        assert_eq!(stats.iterations, 1);
+        assert_eq!(stats.stats.noops_eliminated, 0);
+        assert_eq!(stats.stats.iterations, 1);
     }
 }

@@ -18,14 +18,13 @@
 //! ## How to run
 //!
 //! ```
-//! cargo build --release --bin bench_nf
-//! ./target/release/bench_nf
+//! cargo bench --bench bench_nf
 //! ```
 //!
-//! For a quick smoke-test at reduced sizes:
+//! For a quick smoke-test at reduced sizes (10K / 100K / 1M events):
 //!
 //! ```
-//! BENCH_QUICK=1 ./target/release/bench_nf
+//! BENCH_QUICK=1 cargo bench --bench bench_nf
 //! ```
 
 use jc_computation::{CausalDag, Event, EventId, NormalForm};
@@ -112,7 +111,7 @@ fn build_wide_fanout(n: usize) -> (CausalDag, f64) {
         let mut next_frontier = Vec::new();
         for parent_id in &frontier {
             for branch in 0..FAN_WIDTH {
-                if count >= n + 1 {
+                if count > n {
                     break 'outer;
                 }
                 let e = Event::data(
@@ -169,21 +168,57 @@ fn build_noop_chain(n: usize) -> (CausalDag, f64) {
 // Memory helpers
 // ---------------------------------------------------------------------------
 
-/// Read current RSS from /proc/self/status on Linux; 0 elsewhere.
+/// Read current RSS in KB. Works on Linux (/proc) and macOS (task_info).
 fn rss_kb() -> u64 {
     #[cfg(target_os = "linux")]
     {
-        use std::fs;
-        if let Ok(contents) = fs::read_to_string("/proc/self/status") {
+        if let Ok(contents) = std::fs::read_to_string("/proc/self/status") {
             for line in contents.lines() {
                 if line.starts_with("VmRSS:") {
-                    let kb: u64 = line
+                    return line
                         .split_whitespace()
                         .nth(1)
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
-                    return kb;
                 }
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: task_info is a standard POSIX-adjacent macOS syscall;
+        // mach_task_self() returns the current task port (always valid).
+        unsafe {
+            #[repr(C)]
+            struct TaskBasicInfo {
+                virtual_size:    u64,
+                resident_size:   u64,
+                resident_size_max: u64,
+                user_time:       [u32; 2],
+                system_time:     [u32; 2],
+                policy:          i32,
+                suspend_count:   i32,
+            }
+            extern "C" {
+                fn task_info(
+                    target_task: u32,
+                    flavor: u32,
+                    task_info_out: *mut TaskBasicInfo,
+                    task_info_count: *mut u32,
+                ) -> i32;
+                fn mach_task_self() -> u32;
+            }
+            const MACH_TASK_BASIC_INFO: u32 = 20;
+            let mut info = std::mem::zeroed::<TaskBasicInfo>();
+            let mut count = (std::mem::size_of::<TaskBasicInfo>() / 4) as u32;
+            let kr = task_info(
+                mach_task_self(),
+                MACH_TASK_BASIC_INFO,
+                &mut info,
+                &mut count,
+            );
+            if kr == 0 {
+                return info.resident_size / 1024;
             }
         }
     }
@@ -220,13 +255,13 @@ fn run_one(
     BenchResult {
         shape,
         n_events_in: n_in,
-        n_events_out: stats.events_after,
+        n_events_out: stats.stats.events_after,
         build_ms,
         reduce_ms,
-        iterations: stats.iterations,
-        cones_merged: stats.cones_merged,
-        chains_contracted: stats.chains_contracted,
-        noops_eliminated: stats.noops_eliminated,
+        iterations: stats.stats.iterations,
+        cones_merged: stats.stats.cones_merged,
+        chains_contracted: stats.stats.chains_contracted,
+        noops_eliminated: stats.stats.noops_eliminated,
         rss_kb: rss,
     }
 }

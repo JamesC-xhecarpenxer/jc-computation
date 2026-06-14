@@ -46,6 +46,7 @@ pub use dag::CausalDag;
 pub use cone::ConeHasher;
 pub use nf::NormalForm;
 pub use kernel::JcKernel;
+pub use kernel::{KvFunctor, CachedKvFunctor, LogFunctor, CounterFunctor};
 pub use merge::merge_histories;
 pub use persistence::{
     EventStore, MemoryStore, Snapshot, SerializableEvent,

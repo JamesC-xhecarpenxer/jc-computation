@@ -28,7 +28,13 @@ use crate::nf::{NfConfig, NormalForm};
 ///
 /// This is the distributed sync primitive.
 pub fn merge_histories(a: &CausalDag, b: &CausalDag) -> CausalDag {
-    merge_histories_with_config(a, b, NfConfig::default())
+    // Enable closure check for cross-peer merges: the union may contain
+    // events whose parents only exist on one side.
+    let config = NfConfig {
+        enable_closure_check: true,
+        ..NfConfig::default()
+    };
+    merge_histories_with_config(a, b, config)
 }
 
 /// Merge with custom NF configuration.
@@ -64,14 +70,49 @@ impl DistributedNode {
     /// ```text
     /// H_self := nf(H_self ∪ H_other)
     /// ```
+    ///
+    /// Causal-closure check is enabled here because the remote peer may have
+    /// events whose parents are not yet present locally.
     pub fn sync_with(&mut self, other: &DistributedNode) {
         self.history.union_with(&other.history);
+        let config = crate::nf::NfConfig {
+            enable_closure_check: true,
+            ..crate::nf::NfConfig::default()
+        };
+        let mut nf = crate::nf::NormalForm::new(config);
+        nf.reduce(&mut self.history);
+    }
+
+    /// Append a single event and run nf() immediately.
+    ///
+    /// Convenient for interactive / low-latency writes where you want the
+    /// history normalised after every event.  For bulk ingestion prefer
+    /// [`batch_append`] which runs nf() only once at the end.
+    pub fn append(&mut self, event: crate::event::Event) {
+        self.history.insert(event);
         self.nf.reduce(&mut self.history);
     }
 
-    /// Append a local event and normalize.
-    pub fn append(&mut self, event: crate::event::Event) {
-        self.history.insert(event);
+    /// Append many events and run nf() exactly once at the end.
+    ///
+    /// This is the correct path for sequential bulk ingestion — it avoids
+    /// the O(N²) cost of running nf() after every individual insert while
+    /// still producing a fully-normalised history when done.
+    ///
+    /// ```
+    /// # use jc_computation::{Event, merge::DistributedNode};
+    /// # use std::collections::BTreeSet;
+    /// let mut node = DistributedNode::new("A");
+    /// let events: Vec<Event> = (0..1000).map(|i| {
+    ///     let f = node.history.frontier();
+    ///     Event::data("set", serde_json::json!({"key": format!("k{i}"), "val": i}), f)
+    /// }).collect();
+    /// node.batch_append(events);  // nf() runs once, not 1000 times
+    /// ```
+    pub fn batch_append(&mut self, events: impl IntoIterator<Item = crate::event::Event>) {
+        for event in events {
+            self.history.insert(event);
+        }
         self.nf.reduce(&mut self.history);
     }
 

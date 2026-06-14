@@ -90,13 +90,8 @@ impl CausalDag {
                 .insert(event.id.clone());
         }
         self.events.insert(event.id.clone(), event);
-        // New insertions can only affect descendants' ancestry — but since
-        // insert only adds a leaf, no existing event's ancestry changes.
-        // We only need to invalidate entries for the new event itself (none yet).
-        // The cache remains valid for all existing events.
-        self
-            .ancestry_cache
-            .remove(&"__new__".to_string()); // no-op placeholder; cache stays intact
+        // Inserting a leaf cannot change any existing event's ancestry,
+        // so the ancestry cache remains fully valid.
         true
     }
 

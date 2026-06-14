@@ -265,7 +265,7 @@ impl ConeHasher {
             .min(current_level.len().max(1));
 
         while !current_level.is_empty() {
-            let chunk_size = (current_level.len() + num_threads - 1) / num_threads;
+            let chunk_size = current_level.len().div_ceil(num_threads);
             let chunks: Vec<&[&EventId]> = current_level.chunks(chunk_size).collect();
 
             let mut results: Vec<Option<(EventId, String)>> =

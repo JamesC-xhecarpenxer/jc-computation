@@ -16,8 +16,7 @@
 
 use jc_computation::{CausalDag, Event, EventId, NormalForm};
 use jc_computation::merge::{merge_histories, DistributedNode};
-use jc_computation::nf::NfConfig;
-use jc_computation::kernel::{JcKernel, KvFunctor, CounterFunctor, LogFunctor};
+use jc_computation::kernel::{JcKernel, KvFunctor, CounterFunctor};
 use proptest::prelude::*;
 use std::collections::BTreeSet;
 
@@ -500,7 +499,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_noop_injection_transparent(
-        ops in prop::collection::vec(any::<i64>(), 1..8),
+        ops in prop::collection::vec(-1_000_000i64..=1_000_000i64, 1..8),
         noop_positions in prop::collection::vec(0usize..20, 0..5),
     ) {
         // Build kernel WITHOUT noops

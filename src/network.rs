@@ -332,10 +332,8 @@ let want_ids: Vec<EventId> = peer_ids
         }
 
         // ── Drain Bye ──
-        match conn.recv()? {
-            Message::Bye => {}
-            _ => {} // tolerate missing Bye
-        }
+        // tolerate missing Bye
+        if let Message::Bye = conn.recv()? {}
 
         Ok(SyncStats {
             peer_id,
