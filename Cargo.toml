@@ -32,3 +32,6 @@ indexmap = "=2.2.6"
 [profile.release]
 opt-level = 3
 lto = true
+
+[dev-dependencies]
+proptest = "1.11.0"

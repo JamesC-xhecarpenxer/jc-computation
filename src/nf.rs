@@ -75,6 +75,9 @@ pub struct NfConfig {
     /// Whether to run Phase A causal-closure checks (O(N) scan each iteration).
     /// Safe to disable when the DAG is known to be causally closed on entry.
     pub enable_closure_check: bool,
+    /// Assume DAGs come from admissible/content-addressed constructors.
+    /// When false, C1 will still run on arbitrary DAGs.
+    pub assume_content_addressed: bool,
 }
 
 impl Default for NfConfig {
@@ -82,6 +85,7 @@ impl Default for NfConfig {
         NfConfig {
             max_iterations: 1000,
             enable_cone_merge: true,
+            assume_content_addressed: true,
             enable_chain_contract: true,
             enable_noop_elim: true,
             enable_closure_check: true,
@@ -102,7 +106,7 @@ pub struct NfStats {
 
 /// The Normal Form operator.
 pub struct NormalForm {
-    config: NfConfig,
+    pub config: NfConfig,
     cone_hasher: ConeHasher,
 }
 
@@ -197,17 +201,25 @@ impl NormalForm {
             // The cone cache is seeded lazily here rather than upfront so that
             // DAGs where C3 drains all noops first (the common case) never pay
             // the O(N log N) SHA-256 hashing cost at all.
-            let c1_merged = if has_noops && self.config.enable_cone_merge {
+            let should_run_c1 =
+                self.config.enable_cone_merge &&
+                (!self.config.assume_content_addressed || has_noops);
+
+            let c1_merged = if should_run_c1 {
                 if !cone_cache_ready {
                     self.cone_hasher.compute_all(dag);
                     cone_cache_ready = true;
                 }
+
                 let (merged, dirty) = self.phase_c1_merge_cones(dag);
+
                 stats.cones_merged += merged;
+
                 if !dirty.is_empty() {
                     self.cone_hasher.invalidate(&dirty, dag);
                     self.cone_hasher.compute_dirty(dag);
                 }
+
                 merged
             } else {
                 0
@@ -721,6 +733,7 @@ mod tests {
 
         let size_before = dag.len();
         let mut nf = NormalForm::default();
+        nf.config.assume_content_addressed = false;
         let stats = nf.reduce(&mut dag);
 
         assert!(stats.cones_merged >= 1);

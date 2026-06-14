@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 108cb85d3cbdbce64263f3aa827cf9bff7c54479290f0f3c8d5093fbe5e8a3c1 # shrinks to ops = [-7441850239134581399, 2521566057235603417, -2647832884979174339], noop_positions = []
+cc 5d72189aef70153c0f02d99958b5202e468b63d0999667af44931443111279fe # shrinks to ops = [4845689381751296366, 4377682655103479442], noop_positions = []
+cc 5a7e648512077544926f061f7fd4c2277ff784b281c4c2ed672ab806618c383f # shrinks to ops = [4913147790507647545, -6435661244016828076, 2495741364242952841, 3568326504964124891, -6035717790912091443], noop_positions = [4]

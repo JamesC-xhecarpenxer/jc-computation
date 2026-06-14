@@ -96,6 +96,12 @@ impl Event {
     /// Compute the content-addressed ID for given payload and parents.
     pub fn compute_id(payload: &Payload, parents: &BTreeSet<EventId>) -> EventId { let ph=Self::hash_payload(payload); let pa=Self::hash_parents(parents); Self::compute_id_from_hashes(&ph,&pa) }
 
+
+    /// Read-only access to cached payload serialization.
+    pub fn payload_bytes(&self) -> &[u8] {
+        &self.payload_bytes
+    }
+
     /// Recompute and update this event's ID (used after structural changes).
     /// Also refreshes the `payload_bytes` cache.
     pub fn recompute_id(&mut self) {

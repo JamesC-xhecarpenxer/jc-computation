@@ -173,7 +173,7 @@ impl SemanticFunctor for CounterFunctor {
                 }
                 None
             })
-            .sum()
+            .fold(0i64, |acc, x| acc.wrapping_add(x))
     }
 }
 
