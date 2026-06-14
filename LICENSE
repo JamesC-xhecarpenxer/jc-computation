@@ -1,63 +1,30 @@
-USE ALGEBRA DUAL LICENSE
-========================
+MIT License
 
-Author: James Chapman (XheCarpenXer)
-Contact: xhecarpenxer@gmail.com
-Repository: https://github.com/XheCarpenXer/use-algebra
+Copyright (c) 2026 James Chapman
 
----
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
-## LICENSE A — Personal Use License (Free)
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-Permission is hereby granted, free of charge, to any **private individual** using
-this software **solely for personal, non-commercial purposes**, to use, copy,
-modify, and distribute this software and its documentation, subject to the
-following conditions:
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-1. The above copyright notice and this license notice shall be included in all
-   copies or substantial portions of the software.
+────────────────────────────────────────────────────────
 
-2. This license applies ONLY to private individuals acting in a personal capacity.
-   It does NOT apply to:
-   - Corporations, LLCs, partnerships, or any other legal business entity
-   - Nonprofits, foundations, or government bodies
-   - Any individual acting on behalf of, or for the benefit of, a business entity
-   - Any use that generates revenue, directly or indirectly
-   - Any use within a commercial product, service, or platform
+JC-Computation
 
-3. This software is provided "AS IS", without warranty of any kind, express or
-   implied. In no event shall the author be liable for any claim, damages, or
-   other liability arising from use of the software.
+Computation as a commons: open participation, universal verification, and deterministic outcomes.
 
----
+The machine does not care who you are. It only cares whether the proof is valid.
 
-## LICENSE B — Commercial License (Paid)
+Math is the governor. History is the source of truth. Computation is the constitution.
 
-Any use of this software by an entity other than a private individual for
-personal use — including but not limited to corporations, LLCs, government
-bodies, nonprofits, startups, research institutions, or any individual using
-this software in a professional or commercial context — requires a separate
-written commercial license agreement with the author.
+JC-Computation is a distributed quotient-rewriting engine over causal history space, implemented in Rust.
 
-To obtain a commercial license, contact:
+This software is founded on the principle that convergence should be a property of mathematics rather than authority. State is derived, histories are auditable, and identical causal knowledge produces identical outcomes.
 
-    James Chapman
-    xhecarpenxer@gmail.com
+No permission is required to inspect, verify, reproduce, extend, or redistribute this work. Participation is open to all. Verification is universal. Determinism is the mechanism through which independent actors arrive at shared truth.
 
-Commercial licenses are negotiated individually. Unauthorized commercial use
-constitutes copyright infringement and may be subject to legal remedy.
+The ideas, proofs, implementations, and derivative works enabled by this license remain subject only to the conditions stated above.
 
----
 
-## SUMMARY
 
-| You are...                           | License required  | Cost   |
-|--------------------------------------|-------------------|--------|
-| Private individual, personal use     | License A         | Free   |
-| Business / organization / commercial | License B         | Paid   |
-| Government / nonprofit               | License B         | Paid   |
-| Individual acting for employer       | License B         | Paid   |
-
----
-
-Copyright © 2025 James Chapman. All rights reserved.
