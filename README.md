@@ -169,5 +169,3 @@ See `FORMAL_THEORY.md.pdf` for the complete mathematical treatment, including:
 
 ## License
 
-See LICENSE — dual license: personal use is free, commercial use requires a paid license.  
-© James Chapman <xhecarpenxer@gmail.com>
